@@ -9,6 +9,8 @@ from google.genai import types
 from mood import VtuberMood
 from body import VtuberBody
 from voice import VtuberVoice
+from ear import VtuberEar
+from chat_reader import VtuberChat
 
 class VtuberBrain:
     def __init__(self):
@@ -24,7 +26,7 @@ class VtuberBrain:
         with open("character_background.txt", "r", encoding="utf-8") as f: # Mở file background
                 system_instruction_content = f.read().strip()
 
-        self.model_id = "gemini-2.5-flash-lite"
+        self.model_id = "gemini-2.5-flash"
         self.config = types.GenerateContentConfig(
             system_instruction = system_instruction_content,
             response_mime_type = "application/json", #Ép trả về JSON chuẩn (không có 3 nháy)
@@ -231,26 +233,75 @@ class VtuberBrain:
         print("=== TERMINAL ===")
 
         await self.body.connect()
+
+        self.ear = VtuberEar()
+
+        print("Chọn chế độ: [1] Chat  |  [2] Mic  |  [3] YouTube Live")
+        mode = input("Nhập 1/2/3: ").strip()
         
         asyncio.create_task(self.autonomy_mode())
 
-        while True:
-            print("User: ", end='', flush=True)
-            # run_in_executor -> input không chặn Autonomy loop
-            loop = asyncio.get_running_loop()
-            user_input = await loop.run_in_executor(None, input)
-
-            self.last_interaction_time = time.time()
-
-            if not user_input: continue #Empty String
-
-            if user_input.startswith('/'): #Check command
+        if mode == '3':
+            video_id = input("Nhập Video ID của YouTube Live (VD: dQw4w9WgXcQ): ").strip()
+            
+            # Tạo một cái giỏ (Queue) để đựng tin nhắn
+            chat_queue = asyncio.Queue()
+            
+            # Khởi tạo người đọc chat
+            youtube_reader = VtuberChat(video_id)
+            
+            # Bật task đọc chat chạy ngầm liên tục, ném tin vào chat_queue
+            asyncio.create_task(youtube_reader.start_listening(chat_queue))
+            
+            print("🔴 Đang chờ comment từ luồng Live...")
+            
+            # Vòng lặp chính của Brain
+            while True:
+                self.last_interaction_time = time.time()
+                
+                # Hàm get() sẽ đứng chờ ở đây cho đến khi có comment trong Queue
+                user_input = await chat_queue.get() 
+                
+                print(f" -> Khán giả chat: {user_input}")
+                
                 if user_input == '/exit':
                     await self.body.close()
                     break
-
-                result = self.commands(user_input)
-                print(f'SYSTEM: {result}\n')
-
-            else:
+                    
+                # Xử lý câu chat bằng Gemini (như cũ)
                 await self.process_chat(user_input)
+
+        else:
+            while True:
+                user_input = ''
+
+                if mode == '2':
+                    user_input = await asyncio.to_thread(self.ear.listen)
+
+                    if user_input: 
+                        print(f" -> Bạn nói: {user_input}")
+
+                    else:
+                        # Nếu không nghe thấy gì thì bỏ qua vòng lặp, nghe lại
+                        await asyncio.sleep(0.1) 
+                        continue
+                else:
+                    print("User: ", end='', flush=True)
+                    # run_in_executor -> input không chặn Autonomy loop
+                    loop = asyncio.get_running_loop()
+                    user_input = await loop.run_in_executor(None, input)
+
+                self.last_interaction_time = time.time()
+
+                if not user_input: continue # Empty String
+
+                if user_input.startswith('/'): # Check command
+                    if user_input == '/exit':
+                        await self.body.close()
+                        break
+
+                    result = self.commands(user_input)
+                    print(f'SYSTEM: {result}\n')
+
+                else:
+                    await self.process_chat(user_input)

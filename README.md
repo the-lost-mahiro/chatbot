@@ -35,7 +35,16 @@ Dưới đây là luồng xử lý dữ liệu của Not-Neuro:
 
 ```mermaid
 graph TD
-    User([Người dùng]) -->|Nhập liệu| InputHandler
+    User_Mic([Người dùng - Mic]) -->|Giọng nói| Ear[ear.py - STT]
+    User_Terminal([Người dùng - Terminal]) -->|Nhập liệu| ConsoleInput[Input Terminal]
+    Fan_Chat([Khán giả YouTube]) -->|Bình luận| ChatReader[chat_reader.py]
+    
+    Ear --> InputHandler
+    ConsoleInput --> InputHandler
+    
+    ChatReader -->|Lọc Cooldown & Đẩy| MessageQueue[(Hàng đợi: asyncio.Queue)]
+    MessageQueue -->|Rút từng tin nhắn| InputHandler{Bộ xử lý đầu vào}
+    
     Timer([Autonomy Timer]) -.->|User im lặng > 15p| InputHandler{Bộ xử lý đầu vào}
     
     InputHandler -->|Gửi Prompt| Brain[Gemini API]
@@ -59,7 +68,7 @@ graph TD
 ---
 
 ## Tính năng hiện có
-Dưới đây là những gì mà 1 Fake-Neuro có thể làm hiện tại
+Dưới đây là những gì mà 1 Not-Neuro có thể làm hiện tại
 
 * **Hệ thống phản hồi:** Sử dụng Gemini 2.5 Flash API (có thể sử dụng các model version khác).
 

@@ -11,6 +11,8 @@ class VtuberMood:
         self.max_rate = 30
         self.max_pitch = 50
 
+        self.base_rate = +25
+
         # Map ảnh hưởng lên lời nói
         self.impact_map = {
             'happy': np.array([0.3, 0.2]),
@@ -36,11 +38,11 @@ class VtuberMood:
         rand_pitch = random.uniform(-0.05, 0.05) # +/- 5Hz
 
         # Tính toán
-        final_rate = int((valence * 0.5 + rand_rate) * self.max_rate) # Valence ảnh hưởng 50%, còn lại là random
+        final_rate = int((valence * 0.5 + rand_rate) * self.max_rate) + self.base_rate
         final_pitch = int((arousal * 0.8 + rand_pitch) * self.max_pitch)
 
         # Kẹp giá trị hợp lý
-        final_rate = max(min(final_rate, 50), -30) # Max +50%, Min -30%
+        final_rate = max(min(final_rate, 80), -30) # Max +80%, Min -30%
         final_pitch = max(min(final_pitch, 50), -50)
 
         return f'{final_rate:+}%', f'{final_pitch:+}Hz'
