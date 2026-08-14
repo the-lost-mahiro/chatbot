@@ -3,8 +3,9 @@ import json
 import time
 import asyncio
 import re
-from google import genai
-from google.genai import types
+
+from llm_gemini import GeminiClient
+from llm_ollama import OllamaClient
 
 from mood import VtuberMood
 from body import VtuberBody
@@ -13,39 +14,26 @@ from ear import VtuberEar
 from chat_reader import VtuberChat
 
 class VtuberBrain:
-    def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("Lỗi: Không tìm thấy GEMINI_API_KEY trong file .env!")
-
-        self.client = genai.Client(api_key = api_key)
+    def __init__(self, local_ai=False):
+        if local_ai:
+            self.llm = OllamaClient(model_name="qwen3:8b")
+            print("🚀 Đang dùng AI Local (Ollama)")
+        else:
+            self.llm = GeminiClient()
+            print("☁️ Đang dùng AI Cloud (Gemini)")
 
         self.history_file = 'memory.json'
         self.history = self._load_memory() # Tải lại ký ức khi khởi động
 
         with open("character_background.txt", "r", encoding="utf-8") as f: # Mở file background
-                system_instruction_content = f.read().strip()
-
-        self.model_id = "gemini-2.5-flash"
-        self.config = types.GenerateContentConfig(
-            system_instruction = system_instruction_content,
-            response_mime_type = "application/json", #Ép trả về JSON chuẩn (không có 3 nháy)
-            temperature = 0.7 #Creativity
-        )
+                self.system_instruction_content = f.read().strip()
 
         self.last_interaction_time = time.time() # Lần cuối tương tác
         self.idle_threhold = 900 # 900s ~ 15p
         self.is_processing = False
-        
-        # Sử dụng client.aio để tạo phiên chat Async
-        self.chat = self.client.aio.chats.create(model = self.model_id, 
-                                                        config = self.config,
-                                                        history = self.history)
 
         self.voice_box = VtuberVoice() # Voice
-
         self.mood_engine = VtuberMood() # Hệ thống cảm xúc
-
         self.body = VtuberBody()
 
     def clean_text(self, text):
@@ -92,7 +80,8 @@ class VtuberBrain:
             return '🧹 Hệ thống đã được xóa sạch bộ nhớ!'
         
         elif cmd == '/status':
-            return f"🤖 Model: {self.model_id} | Memory: {len(self.history)} messages."
+            llm_name = self.llm.__class__.__name__
+            return f"🤖 Model: {llm_name} | Memory: {len(self.history)} messages."
         
         elif cmd == "/help":
             return "📌 Lệnh hiện có: /reset, /status, /help, /exit"
@@ -180,13 +169,16 @@ class VtuberBrain:
                         "Đừng lặp lại câu cũ."
                         "Trả về định dạng JSON chuẩn như mọi khi."
                     )
-                    response = await self.chat.send_message(autonomy_prompt)
-                    
-                    data = self._parse_response(response.text)
+                    json_string = await self.llm.generate_response(
+                        self.system_instruction_content, 
+                        self.history, 
+                        autonomy_prompt
+                    )
+                    data = self._parse_response(json_string)
 
                     print(f"🤖 [Bot Tự Nghĩ]: {data.get('display_text')}")
 
-                    self.history.append({"role": "model", "parts": [{"text": data.get("display_text")}]})
+                    self.history.append({"role": "bot", "text": data.get("display_text")})
 
                     self._save_memory() # Optional
 
@@ -207,13 +199,17 @@ class VtuberBrain:
 
         self.is_processing = True
         try:
-            response = await self.chat.send_message(user_input) # Gửi tin nhắn cho Gemini
+            json_string = await self.llm.generate_response(
+                self.system_instruction_content, 
+                self.history, 
+                user_input
+            )
 
-            data = self._parse_response(response.text)
+            data = self._parse_response(json_string)
             
             # Cập nhật lịch sử mới
-            self.history.append({"role": "user", "parts": [{"text": user_input}]})
-            self.history.append({"role": "model", "parts": [{"text": data.get('display_text')}]})
+            self.history.append({"role": "user", "text": user_input})
+            self.history.append({"role": "bot", "text": data.get('display_text')})
 
             self._save_memory()
 
